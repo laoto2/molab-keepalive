@@ -36,6 +36,17 @@ Khi khoẻ sẵn, mỗi run chỉ tốn ~2 phút (mở trang + giữ ngắn + th
 
 ## Setup / nâng cấp từ v1 (10 phút)
 
+### ⚡ Cách nhanh nhất — 1 file, 1 lệnh
+
+Copy `setup_molab_state.py` (trong `deps/` của notebook, hoặc repo này) về máy → chạy:
+
+```bash
+python setup_molab_state.py        # tự cài deps → mở browser đăng nhập → verify → set 2 secret
+```
+
+(xong có thể xoá token khỏi script / revoke token). Các bước tay bên dưới vẫn đúng nếu muốn tự làm:
+
+
 1. Đẩy 3 file lên repo: `keepalive_job.py` (thay bản cũ) + `.github/workflows/keepalive.yml`
    (thay bản cũ) + `.github/workflows/rearm.yml` (giữ nếu đã có).
 2. Secrets (Settings → Secrets and variables → Actions):

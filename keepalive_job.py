@@ -106,6 +106,21 @@ def find_app_frame(page):
     return best if best_score > 0 else None
 
 
+def open_editor(app, page):
+    """Nếu đang ở preview (0 run-button): bấm nút "Run or Edit"/"Edit" để vào editor."""
+    for pat in ("run or edit", "open in editor", "switch to edit"):
+        try:
+            loc = app.get_by_text(re.compile(pat.replace(" ", r"\s+"), re.I))
+            if loc.count():
+                loc.first.click(timeout=4000)
+                log(f'bấm "{pat}" để vào editor…')
+                page.wait_for_timeout(8000)
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def press_run_all(app, page):
     """Chạy toàn bộ cell bằng 3 cách dự phòng. Trả về tên cách dùng được."""
     page.on("dialog", lambda d: d.accept())
@@ -198,18 +213,33 @@ def main():
             return
 
         n_btn = app.locator('[data-testid="run-button"]').count()
-        anon = "Sign In" in page.locator("body").inner_text(timeout=5000)
+        # "Sign In" chỉ coi là ẩn danh khi đồng thời KHÔNG có nút run (tránh false-positive)
+        anon = n_btn == 0 and "Sign In" in page.locator("body").inner_text(timeout=5000)
         log(f"app-frame: {app.url[:90]}")
         log(f"run-buttons: {n_btn} · anonymous={anon} · static_console={bool(static_mode)}")
 
-        if not sf and (anon or n_btn == 0):
-            log("⛔ CHẾ ĐỘ ẨN DANH: read-only preview — KHÔNG thể chạy cell.")
+        # đã đăng nhập nhưng vẫn preview (0 run-button) → bấm "Run or Edit" vào editor
+        if sf and n_btn == 0 and not anon:
+            if open_editor(app, page):
+                app = find_app_frame(page) or app
+                n_btn = app.locator('[data-testid="run-button"]').count()
+                log(f"sau Run-or-Edit: run-buttons={n_btn}")
+
+        if anon:
+            log("⛔ CHẾ ĐỘ ẨN DANH (thiếu/chết cookie): read-only preview — KHÔNG thể chạy cell.")
             log("   →Fix: chạy deps/capture_login.py ở máy cá nhân để lấy cookie,")
             log("     rồi `gh secret set MOLAB_STATE < <(base64 -w0 storage_state.json)`")
             summary(["## molab keepalive",
                      "- ⚠️ Ẩn danh (read-only preview) — không chạy được cell.",
                      "- Cần secret `MOLAB_STATE` (cookie) + khuyến nghị `MOLAB_API_URL`.",
                      f"- API: {'khoẻ ✅' if healthy_start else 'chưa khoẻ ❌'}"])
+            page.wait_for_timeout(min(WAKE_WAIT, 120) * 1000)
+            browser.close()
+            return
+
+        if n_btn == 0 and not static_mode:
+            log("⚠️ đã vào app nhưng không thấy nút run — molab có thể đổi UI; giữ phiên ngắn rồi thoát.")
+            summary(["## molab keepalive", "- ⚠️ app-load nhưng 0 run-button (UI đổi?) — chỉ giữ phiên ngắn."])
             page.wait_for_timeout(min(WAKE_WAIT, 120) * 1000)
             browser.close()
             return

@@ -22,6 +22,7 @@ Relaunch xảy ra (molab recycle/hard-cap — không chặn được từ ngoài
 mở trang (có cookie nếu có) → tìm app-frame marimo
    → nếu ẩn danh: log hướng dẫn fix, giữ phiên ngắn, thoát
    → nếu khoẻ sẵn (API trả lời): giữ phiên ngắn WAKE_WAIT, thoát
+   → đã đăng nhập mà vẫn preview? bấm nút "Run or Edit" vào editor trước
    → nếu cần khôi phục: CHẠY TOÀN BỘ CELL bằng 3 cách dự phòng:
         (1) Ctrl+K → gõ "run all" → chọn "Re-run all cells"   (command palette)
         (2) Ctrl+Shift+R  ("Run all stale cells" — hotkey mặc định marimo)

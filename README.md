@@ -22,7 +22,6 @@ Relaunch xảy ra (molab recycle/hard-cap — không chặn được từ ngoài
 mở trang (có cookie nếu có) → tìm app-frame marimo
    → nếu ẩn danh: log hướng dẫn fix, giữ phiên ngắn, thoát
    → nếu khoẻ sẵn (API trả lời): giữ phiên ngắn WAKE_WAIT, thoát
-   → đã đăng nhập mà vẫn preview? bấm nút "Run or Edit" vào editor trước
    → nếu cần khôi phục: CHẠY TOÀN BỘ CELL bằng 3 cách dự phòng:
         (1) Ctrl+K → gõ "run all" → chọn "Re-run all cells"   (command palette)
         (2) Ctrl+Shift+R  ("Run all stale cells" — hotkey mặc định marimo)
@@ -55,6 +54,39 @@ Khi khoẻ sẵn, mỗi run chỉ tốn ~2 phút (mở trang + giữ ngắn + th
      (không có `gh` CLI: vào web GitHub → Secrets → dãy base64 vào ô value).
      Cookie hết hạn ⇒ chạy lại capture_login + set secret (job sẽ log rõ
      `⛔ CHẾ ĐỘ ẨN DANH` khi cookie chết).
+
+   Không muốn tải `capture_login.py`? Copy đoạn này lưu thành file rồi chạy như trên:
+
+   ```python
+#!/usr/bin/env python3
+"""capture_login.py — chạy trên MÁY CÁ NHÂN (có màn hình) để lấy cookie đăng nhập molab.
+
+  pip install playwright && playwright install chromium
+  NOTEBOOK_URL="https://molab.marimo.io/notebooks/nb_XXX" python3 capture_login.py
+
+Trình duyệt mở ra → đăng nhập molab → mở notebook → quay lại terminal nhấn Enter
+⇒ file storage_state.json chứa cookie; copy lên VPS (scp) rồi trỏ STORAGE_STATE vào nó.
+Cookie hết hạn thì chạy lại. Nếu notebook của bạn mở bằng link công khai → bỏ qua bước này.
+"""
+import os, sys
+from playwright.sync_api import sync_playwright
+
+URL = os.environ.get("NOTEBOOK_URL", "").strip()
+OUT = os.environ.get("STORAGE_STATE", "storage_state.json")
+if not URL:
+    sys.exit("❌ thiếu NOTEBOOK_URL")
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.goto(URL)
+    input("Đăng nhập + mở notebook xong thì nhấn Enter ở đây… ")
+    ctx.storage_state(path=OUT)
+    browser.close()
+print("✅ đã lưu", OUT, "— scp lên VPS rồi set STORAGE_STATE")
+   ```
+
 3. Tab **Actions** → "molab keepalive" → **Run workflow** test ngay. Log tốt phải có:
    - `auth: có (MOLAB_STATE)` + `run-buttons: N>0`
    - `run-all: …` + `instantiate: ✅`

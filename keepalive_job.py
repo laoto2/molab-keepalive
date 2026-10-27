@@ -171,7 +171,16 @@ def press_run_all(app, page):
 
 
 def instantiated(app):
-    """Heuristic: cell 🚑 đã render output (có chữ boot/Khôi phục/stack)."""
+    """Heuristic: cell 🚑 đã render output. Editor ảo hoá cell (cell 🚑 gần cuối trang)
+    → cuộn hết mọi container trước khi đọc text, nếu không text chưa vào DOM."""
+    try:
+        app.evaluate(
+            "() => { window.scrollTo(0, document.documentElement.scrollHeight);"
+            " document.querySelectorAll('div').forEach(d => {"
+            " if (d.scrollHeight > d.clientHeight + 50 && d.clientHeight > 300) d.scrollTop = d.scrollHeight; }); }")
+        app.wait_for_timeout(1200)
+    except Exception:
+        pass
     try:
         txt = app.locator("body").inner_text(timeout=5000)
         return any(k in txt for k in ("boot.sh", "Khôi phục", "keepalive.log", "llama-server"))

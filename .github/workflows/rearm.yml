@@ -1,0 +1,23 @@
+name: re-arm scheduled workflow
+# GitHub tắt cron sau 60 ngày repo không có commit — workflow này commit rỗng
+# mỗi tháng để keepalive 5 phút không bao giờ bị tắt tự động.
+on:
+  schedule:
+    - cron: "0 3 1 * *"   # 03:00 UTC ngày 1 hàng tháng
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rearm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          git config user.name "keepalive-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit --allow-empty -m "re-arm: keep scheduled workflow alive ($(date -u +%F))"
+          git push

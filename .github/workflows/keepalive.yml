@@ -1,0 +1,21 @@
+name: molab keepalive
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # GitHub có thể trễ 5-15 phút — vẫn ổn với idle-timeout 10-30 phút
+  workflow_dispatch:          # nút chạy tay để test ngay
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install playwright==1.49.1
+      - run: playwright install --with-deps chromium
+      - run: python keepalive_job.py
+        env:
+          MOLAB_NOTEBOOK_URL: ${{ secrets.MOLAB_NOTEBOOK_URL || 'https://molab.marimo.io/notebooks/nb_ZeKzrEpoxzKWR2GD4a54vA' }}
+          WAKE_WAIT: "60"
+        timeout-minutes: 6

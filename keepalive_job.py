@@ -107,8 +107,9 @@ def find_app_frame(page):
 
 
 def open_editor(app, page):
-    """Nếu đang ở preview (0 run-button): bấm nút "Run or Edit"/"Edit" để vào editor."""
-    for pat in ("run or edit", "open in editor", "switch to edit"):
+    """Preview (0 run-button): bấm "Run or Edit"; đã vào session mà bị Reader:
+    bấm "Take over" để giành ghế editor (phiên khác đang giữ — vd tab đang mở)."""
+    for pat in ("take over", "run or edit", "open in editor", "switch to edit"):
         try:
             loc = app.get_by_text(re.compile(pat.replace(" ", r"\s+"), re.I))
             if loc.count():
@@ -227,12 +228,34 @@ def main():
         log(f"app-frame: {app.url[:90]}")
         log(f"run-buttons: {n_btn} · anonymous={anon} · static_console={bool(static_mode)}")
 
+        # stack khoẻ sẵn → KHÔNG đụng vào gì (kể cả Take over) — chỉ giữ phiên ngắn
+        if healthy_start:
+            summary(["## molab keepalive", "- 🟢 stack khoẻ — giữ phiên ngắn.", f"- API: `{API_URL}`"])
+            page.wait_for_timeout(WAKE_WAIT * 1000)
+            browser.close()
+            return
+
         # đã đăng nhập nhưng vẫn preview (0 run-button) → bấm "Run or Edit" vào editor
         if sf and n_btn == 0 and not anon:
+            reader = False
+            try:
+                reader = "connected as a reader" in app.locator("body").inner_text(timeout=5000)
+            except Exception:
+                pass
+            if reader:
+                log("phát hiện 'connected as a reader' → bấm Take over (phiên khác đang giữ ghế editor)")
             if open_editor(app, page):
+                page.wait_for_timeout(3000)
                 app = find_app_frame(page) or app
                 n_btn = app.locator('[data-testid="run-button"]').count()
-                log(f"sau Run-or-Edit: run-buttons={n_btn}")
+                if n_btn == 0:
+                    # một số UI cần reload sau Take over
+                    log("vẫn 0 run-button → reload 1 lần rồi quét lại")
+                    page.reload(wait_until="domcontentloaded", timeout=60000)
+                    page.wait_for_timeout(8000)
+                    app = find_app_frame(page) or app
+                    n_btn = app.locator('[data-testid="run-button"]').count()
+                log(f"sau Take-over/Run-or-Edit: run-buttons={n_btn}")
 
         if anon:
             log("⛔ CHẾ ĐỘ ẨN DANH (thiếu/chết cookie): read-only preview — KHÔNG thể chạy cell.")
@@ -243,20 +266,6 @@ def main():
                      "- Cần secret `MOLAB_STATE` (cookie) + khuyến nghị `MOLAB_API_URL`.",
                      f"- API: {'khoẻ ✅' if healthy_start else 'chưa khoẻ ❌'}"])
             page.wait_for_timeout(min(WAKE_WAIT, 120) * 1000)
-            browser.close()
-            return
-
-        if n_btn == 0 and not static_mode:
-            log("⚠️ đã vào app nhưng không thấy nút run — molab có thể đổi UI; giữ phiên ngắn rồi thoát.")
-            summary(["## molab keepalive", "- ⚠️ app-load nhưng 0 run-button (UI đổi?) — chỉ giữ phiên ngắn."])
-            page.wait_for_timeout(min(WAKE_WAIT, 120) * 1000)
-            browser.close()
-            return
-
-        if healthy_start:
-            # Stack khoẻ — không cần chạy lại cell (tránh làm phiền phiên đang sống)
-            summary(["## molab keepalive", "- 🟢 stack khoẻ — giữ phiên ngắn.", f"- API: `{API_URL}`"])
-            page.wait_for_timeout(WAKE_WAIT * 1000)
             browser.close()
             return
 

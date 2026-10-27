@@ -1,5 +1,7 @@
 # 🧪 GitHub Actions keep-alive cho sandbox molab (MIỄN PHÍ)
 
+> Repo đang chạy: **https://github.com/laoto2/molab-keepalive** · xem log: tab **Actions** của repo.
+
 Giữ phiên sandbox molab "có hoạt động" bằng cách mở trang notebook bằng Chromium headless
 mỗi ~5 phút qua GitHub Actions (repo **public** → miễn phí unlimited minutes).
 

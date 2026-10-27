@@ -1,21 +1,43 @@
+# keepalive.yml — molab keepalive v2: wake → chạy cell → giữ tới khi stack sống
+# Copy file này vào: .github/workflows/keepalive.yml (repo laoto2/molab-keepalive)
+# Secrets cần thiết (Settings → Secrets and variables → Actions):
+#   MOLAB_NOTEBOOK_URL  — bắt buộc: https://molab.marimo.io/notebooks/nb_XXX
+#   MOLAB_API_URL       — khuyến nghị: https://xxxx.srv.us (verify stack đã hồi phục)
+#   MOLAB_STATE         — khuyến nghị: cookie đăng nhập (storage_state.json gốc hoặc base64;
+#                         lấy 1 lần bằng deps/capture_login.py trên máy cá nhân)
 name: molab keepalive
 on:
   schedule:
-    - cron: "*/5 * * * *"   # GitHub có thể trễ 5-15 phút — vẫn ổn với idle-timeout 10-30 phút
-  workflow_dispatch:          # nút chạy tay để test ngay
+    - cron: "*/5 * * * *"   # 5 phút/lần — GitHub có thể trễ 5-15 phút, chấp nhận được
+  workflow_dispatch:          # chạy tay để test
+
+concurrency:
+  group: molab-keepalive
+  cancel-in-progress: false   # đừng huấn phiên đang hold cho stack hồi phục
 
 jobs:
-  ping:
+  keepalive:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install playwright==1.49.1
-      - run: playwright install --with-deps chromium
-      - run: python keepalive_job.py
+          python-version: "3.12"
+
+      - name: Cài playwright + chromium
+        run: |
+          pip install -q playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Wake → Run all cells → Hold tới khi stack sống
         env:
-          MOLAB_NOTEBOOK_URL: ${{ secrets.MOLAB_NOTEBOOK_URL || 'https://molab.marimo.io/notebooks/nb_ZeKzrEpoxzKWR2GD4a54vA' }}
-          WAKE_WAIT: "60"
-        timeout-minutes: 6
+          MOLAB_NOTEBOOK_URL: ${{ secrets.MOLAB_NOTEBOOK_URL }}
+          MOLAB_API_URL: ${{ secrets.MOLAB_API_URL }}
+          MOLAB_STATE: ${{ secrets.MOLAB_STATE }}
+          WAKE_WAIT: "90"      # giữ phiên tối thiểu khi mọi thứ đã khoẻ
+          RUN_WAIT: "120"      # chờ cell boot render sau khi bấm Run all
+          HOLD_MAX: "1500"     # giữ tối đa 25 phút khi đang chờ stack hồi phục
+          POLL: "30"           # chu kỳ poll API trong lúc hold
+        run: python keepalive_job.py

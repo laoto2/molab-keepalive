@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""keepalive_job.py v3 — WAKE → RUN (verify THẬT bằng vùng output) → HOLD → fail thật.
+"""keepalive_job.py v3.2 — WAKE → RUN (verify THẬT bằng vùng output) → HOLD + network keepalive (DevTools→Network) → fail thật.
 
 Ba lỗi của v2 đã sửa (vì sao v2 báo SUCCESS mà cell vẫn không chạy):
   B1 · instantiated() dương giả: v2 đọc body.inner_text() tìm "boot.sh"/"keepalive.log"
@@ -19,9 +19,12 @@ Kết quả trung thực:
   exit 1  · không thấy app / ẩn danh / không chạy được cell / API chưa khoẻ sau HOLD.
   ⇒ Tab Actions giờ phản ánh đúng: ❌ = cần can thiệp (cookie, UI), ✅ = stack sống.
 
+v3.2 · chống relaunch: trong pha giữ phiên (WAKE/HOLD) trang tự phát request mạng định kỳ —
+như đang bật DevTools → tab Network — để platform không coi sandbox là idle.
+
 Secrets: MOLAB_NOTEBOOK_URL (bắt buộc) · MOLAB_STATE (cookie, JSON hoặc base64)
          MOLAB_API_URL (khuyến nghị — URL *.srv.us để verify stack hồi phục)
-Env: WAKE_WAIT=90 · RUN_VERIFY=45 · HOLD_MAX=1500 · POLL=30 · HEADLESS=1
+Env: WAKE_WAIT=90 · RUN_VERIFY=45 · HOLD_MAX=1500 · POLL=30 · NET_PING_INTERVAL=15 · HEADLESS=1
 """
 import base64
 import json
@@ -41,6 +44,7 @@ WAKE_WAIT = int(os.environ.get("WAKE_WAIT", "90"))
 RUN_VERIFY = int(os.environ.get("RUN_VERIFY", "45"))
 HOLD_MAX = int(os.environ.get("HOLD_MAX", "1500"))
 POLL = int(os.environ.get("POLL", "30"))
+NET_PING_INTERVAL = int(os.environ.get("NET_PING_INTERVAL", "15"))
 HEADLESS = os.environ.get("HEADLESS", "1") != "0"
 SUMMARY = os.environ.get("GITHUB_STEP_SUMMARY", "")
 
@@ -236,6 +240,41 @@ def run_and_verify(app, page, before):
     return ""
 
 
+def network_ping(page, n):
+    """Mô phỏng việc mở DevTools → tab Network: phát một request nhẹ tới chính sandbox
+    để giữ 'hoạt động mạng' liên tục (chống idle-timeout / relaunch).
+    Request hiện rõ trong panel Network (fetch same-origin, no-store)."""
+    try:
+        res = page.evaluate(
+            """async (u) => {
+                const t0 = Date.now();
+                try {
+                    const r = await fetch(u, {cache: 'no-store', credentials: 'include', redirect: 'follow'});
+                    const b = await r.text().catch(() => '');
+                    return {ok: r.ok, status: r.status, bytes: b.length, ms: Date.now() - t0};
+                } catch (e) {
+                    return {ok: false, err: String(e).slice(0, 100), ms: Date.now() - t0};
+                }
+            }""",
+            NOTEBOOK_URL,
+        )
+        log(f"[net] ping #{n}: status={res.get('status')} bytes={res.get('bytes')} {res.get('ms')}ms")
+    except Exception as e:
+        log(f"[net] ping #{n} lỗi: {type(e).__name__} {str(e)[:100]}")
+
+
+def hold_with_net(page, seconds, poll=15):
+    """Giữ phiên + phát request mạng liên tục (thay wait_for_timeout thụ động).
+    Trả về số ping đã gửi — như bảng Network của DevTools đếm request."""
+    t0 = time.time()
+    i = 0
+    while time.time() - t0 < seconds:
+        page.wait_for_timeout(poll * 1000)
+        i += 1
+        network_ping(page, i)
+    return i
+
+
 def main():
     if not NOTEBOOK_URL:
         sys.exit("❌ thiếu secret MOLAB_NOTEBOOK_URL (trang notebook trên molab)")
@@ -260,9 +299,10 @@ def main():
             ctx = browser.new_context(storage_state=sf or None)
             page = ctx.new_page()
             page.goto(NOTEBOOK_URL, wait_until="domcontentloaded", timeout=90000)
-            page.wait_for_timeout(WAKE_WAIT * 1000)
+            _net_pings = hold_with_net(page, WAKE_WAIT, poll=NET_PING_INTERVAL)
+            log(f"🟢 giữ phiên {WAKE_WAIT}s — {_net_pings} request mạng (DevTools→Network)")
             browser.close()
-        summary(["## molab keepalive v3", "- 🟢 stack khoẻ — giữ phiên, không đụng gì.", f"- API: `{API_URL}`"])
+        summary(["## molab keepalive v3", "- 🟢 stack khoẻ — giữ phiên + network keepalive (DevTools→Network).", f"- API: `{API_URL}`"])
         return
 
     with sync_playwright() as p:
@@ -339,9 +379,12 @@ def main():
         # HOLD: giữ phiên (websocket = hoạt động) + chờ boot.sh dựng lại stack (~8-13 phút)
         t0 = time.time()
         healthy = api_ok()
+        _net_i = 0
         while not healthy and time.time() - t0 < HOLD_MAX:
             log(f"… hold {time.time() - t0:.0f}s/{HOLD_MAX}s — cell đã chạy, chờ boot dựng lại stack")
             page.wait_for_timeout(POLL * 1000)
+            _net_i += 1
+            network_ping(page, _net_i)
             healthy = api_ok()
         if healthy:
             log(f"✅ stack KHOẺ sau {time.time() - t0:.0f}s — {API_URL}")

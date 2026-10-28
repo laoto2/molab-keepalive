@@ -82,17 +82,21 @@ def state_file():
     return path
 
 
-def cookie_days_left(sf):
-    """Số ngày còn lại của cookie ngắn hạn nhất — cảnh báo sớm cookie sắp chết."""
+def cookie_report(sf):
+    """(min_days, max_days, tên cookie ngắn nhất, tên cookie dài nhất).
+
+    Chỉ BÁO ĐỘNG khi cookie DÀI HẠN SÓNG NHẤT cũng sắp hết hạn (< 3 ngày) — storage_state
+    thường kèm cookie phụ ngắn hạn (csrf/consent) hết trong vài giờ, hết riêng là bình thường."""
     try:
         data = json.load(open(sf))
-        exps = [
-            c.get("expires", -1)
+        live = [
+            (c.get("name", "?"), (c["expires"] - time.time()) / 86400)
             for c in data.get("cookies", [])
-            if c.get("expires", -1) and c.get("expires", -1) > 0
+            if c.get("expires") and c["expires"] > 0
         ]
-        if exps:
-            return (min(exps) - time.time()) / 86400
+        if live:
+            live.sort(key=lambda x: x[1])
+            return live[0][1], live[-1][1], live[0][0], live[-1][0]
     except Exception:
         pass
     return None
@@ -240,10 +244,13 @@ def main():
     log("auth:", "có cookie" if sf else "KHÔNG (ẩn danh) — sẽ KHÔNG chạy được cell")
     log("api verify:", API_URL or "(chưa set MOLAB_API_URL)")
     if sf:
-        days = cookie_days_left(sf)
-        if days is not None:
-            note = " — ⚠️ SẮP HẾT HẠN, chạy lại capture_login.py!" if days < 3 else ""
-            log(f"cookie ngắn hạn nhất còn {days:.1f} ngày{note}")
+        _rep = cookie_report(sf)
+        if _rep:
+            _mn, _mx, _mn_name, _mx_name = _rep
+            if _mx < 3:
+                log(f"⚠️ cookie sắp hết hạn — dài hạn nhất '{_mx_name}' còn {_mx:.1f} ngày → chạy lại capture_login.py!")
+            else:
+                log(f"cookie: ngắn nhất '{_mn_name}' {_mn:+.1f} ngày · dài nhất '{_mx_name}' {_mx:+.1f} ngày (OK)")
 
     healthy_start = api_ok()
     if healthy_start:

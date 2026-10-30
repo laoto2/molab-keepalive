@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""keepalive_job.py v3.3 — WAKE → RUN (verify THẬT bằng vùng output) → HOLD + network keepalive (DevTools→Network) → fail thật.
+"""keepalive_job.py v3.4 — WAKE → RUN (verify THẬT bằng vùng output) → HOLD + network keepalive (DevTools→Network) → fail thật.
 
-v3.3 (30-10) · UI molab ĐÃ ĐỔI: mở notebook bằng cookie (không phải phiên editor của user)
+v3.4 (30-10) · UI molab ĐÃ ĐỔI: mở notebook bằng cookie (không phải phiên editor của user)
 giờ hiện **«Read-only preview. Run it now without saving, or fork…»** — app KHÔNG có nút run
 và cũng không còn «Take over / Run or Edit» ⇒ v3.2 bấm hụt hết rồi `exit 1` (đúng là lỗi UI,
-không phải cookie). v3.3 thêm bước ⓿: bấm nút **Run it now** để notebook CHẠY NGAY trong sandbox
-(không lưu) rồi mới tới thang dự phòng palette → hotkey → nút run. Nhận diện qua text nút
+không phải cookie). v3.3 thêm bước ⓿: bấm nút **Run it now** (mở notebook vào editor, không lưu) rồi mới tới
+thang dự phòng palette → hotkey → nút run — v3.3 đã tính nhầm bước ⓿ là "đã chạy" nên dừng sớm,
+v3.4 chỉ coi ⓿ là bước MỞ editor và chụp lại mốc output sau đó. Nhận diện qua text nút
 (có/không phụ thuộc phiên bản molab) chứ không phụ thuộc URL hay DOM class.
 
 Ba lỗi của v2 đã sửa (vì sao v2 báo SUCCESS mà cell vẫn không chạy):
@@ -348,7 +349,7 @@ def main():
             _net_pings = hold_with_net(page, WAKE_WAIT, poll=NET_PING_INTERVAL)
             log(f"🟢 giữ phiên {WAKE_WAIT}s — {_net_pings} request mạng (DevTools→Network)")
             browser.close()
-        summary(["## molab keepalive v3.3", "- 🟢 stack khoẻ — giữ phiên + network keepalive (DevTools→Network).", f"- API: `{API_URL}`"])
+        summary(["## molab keepalive v3.4", "- 🟢 stack khoẻ — giữ phiên + network keepalive (DevTools→Network).", f"- API: `{API_URL}`"])
         return
 
     with sync_playwright() as p:
@@ -361,7 +362,7 @@ def main():
         if app is None:
             log("⛔ KHÔNG tìm thấy app marimo — cookie chết (trang login) hoặc URL sai")
             summary([
-                "## molab keepalive v3.3",
+                "## molab keepalive v3.4",
                 "- ❌ Không tìm thấy app marimo (login page / URL sai).",
                 "- Fix: chạy lại `capture_login.py` ở máy cá nhân → `gh secret set MOLAB_STATE …`",
             ])
@@ -381,7 +382,7 @@ def main():
         if anon:
             log("⛔ ẨN DANH (cookie thiếu/chết) — read-only preview, KHÔNG chạy được cell")
             summary([
-                "## molab keepalive v3.3",
+                "## molab keepalive v3.4",
                 "- ❌ Ẩn danh — cookie `MOLAB_STATE` thiếu hoặc đã hết hạn.",
                 "- Fix: `python capture_login.py` (máy cá nhân) → `gh secret set MOLAB_STATE < <(base64 -w0 storage_state.json)`",
             ])
@@ -389,7 +390,12 @@ def main():
             sys.exit(1)  # v2 ở đây exit 0 ⇒ success giả
 
         how = ""
-        # ── ⓿) molab «Read-only preview → Run it now»: cách DUY NHẤT để notebook chạy thật ──
+        # ── ⓿) molab «Read-only preview → Run it now»: ĐIỀU KIỆN CẦN để vào được editor ──
+        # ⚠️ Không tính bước này là "đã chạy": bấm nút chỉ đổi app từ read-only preview sang
+        # editor (đã đo thật 30-10: run-buttons 0 → 37) — bản thân nó KHÔNG chạy cell nào
+        # (kiểm chứng bằng mtime file: không file nào bị cell ghi lại). Việc "đã chạy thật"
+        # vẫn do thang palette/hotkey/nút run quyết định, và snapshot `before` phải chụp LẠI
+        # sau khi vào editor — nếu không, phần text chênh lệch do đổi view sẽ bị tính nhầm.
         if n_btn == 0 and click_run_it_now(page):
             page.wait_for_timeout(10000)
             dismiss_dialog(page)
@@ -397,10 +403,9 @@ def main():
             app = find_app_frame(page) or app
             n_btn = app.locator('[data-testid="run-button"]').count()
             log(f"sau 'Run it now': run-buttons={n_btn} · url={page.url[:80]}")
-            _seen, _ = outputs_appeared(app, before)
-            if _seen:
-                log("✅ 'Run it now' đã làm notebook chạy THẬT (output mới xuất hiện)")
-                how = "run-it-now"
+            _seen, _ = outputs_appeared(app, before)   # chỉ để log tham khảo
+            before = output_text(app)                  # snapshot MỚI: mốc so sánh cho thang dưới
+            log(f"mốc so sánh mới sau khi vào editor: {len(before)} ký tự")
 
         if how == "" and n_btn == 0:  # UI cũ: giành ghế editor (Take over / Run or Edit)
             if open_editor(app, page):
@@ -418,7 +423,7 @@ def main():
             log(f"sau editor-step: run-buttons={n_btn}")
             if n_btn == 0 and how == "":
                 summary([
-                    "## molab keepalive v3.3",
+                    "## molab keepalive v3.4",
                     "- ❌ Đã login nhưng vẫn không có nút run (UI molab có thể đã đổi).",
                     "- Fix: chạy tay 1 lần với `HEADLESS: 0` để xem UI thật, cập nhật selector.",
                 ])
@@ -430,7 +435,7 @@ def main():
         if not how:
             log("⛔ KHÔNG chạy được cell nào sau cả 3 cách — cần debug UI (HEADLESS=0)")
             summary([
-                "## molab keepalive v3.3",
+                "## molab keepalive v3.4",
                 "- ❌ Đã gửi run-all (palette/hotkey/nút) nhưng KHÔNG thấy output nào xuất hiện.",
                 "- Cell KHÔNG chạy ⇒ stack sẽ không tự phục hồi. Cần debug UI molab hiện tại.",
             ])
@@ -450,7 +455,7 @@ def main():
         if healthy:
             log(f"✅ stack KHOẺ sau {time.time() - t0:.0f}s — {API_URL}")
             summary([
-                "## molab keepalive v3.3",
+                "## molab keepalive v3.4",
                 f"- ✅ Cell đã chạy (cách: `{how}`) → stack khoẻ sau {time.time() - t0:.0f}s.",
                 f"- API: `{API_URL}`",
             ])
@@ -459,7 +464,7 @@ def main():
         log("⚠️ cell ĐÃ chạy nhưng API chưa khoẻ sau HOLD_MAX — boot có thể vẫn đang chạy;")
         log("   cron lần sau sẽ verify lại (boot.sh idempotent).")
         summary([
-            "## molab keepalive v3.3",
+            "## molab keepalive v3.4",
             f"- ⚠️ Cell đã chạy (`{how}`) nhưng API chưa khoẻ sau {HOLD_MAX}s.",
             "- Có thể boot chưa xong (~13 phút) — cron lần sau sẽ verify lại.",
         ])
